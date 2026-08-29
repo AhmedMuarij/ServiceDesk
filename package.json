@@ -1,0 +1,57 @@
+{
+  "name": "serviceops",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio",
+    "db:seed": "tsx prisma/seed.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test \"tests/**/*.test.ts\"",
+    "verify": "tsx scripts/verify.ts",
+    "verify:outbox": "tsx scripts/verify-outbox.ts",
+    "check": "npm run typecheck && npm test",
+    "verify:http": "tsx scripts/verify-http.ts",
+    "eval:classification": "tsx scripts/eval-classification.ts",
+    "ai:models": "tsx scripts/ai-models.ts",
+    "verify:ai": "tsx scripts/verify-ai.ts",
+    "ai:cache-probe": "tsx scripts/ai-cache-probe.ts"
+  },
+  "dependencies": {
+    "@auth/prisma-adapter": "^2.11.3",
+    "@date-fns/tz": "1.5.0",
+    "@google/genai": "^2.19.0",
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0",
+    "bcryptjs": "^3.0.3",
+    "date-fns": "^4.4.0",
+    "next": "16.3.3",
+    "next-auth": "^5.0.0-beta.32",
+    "pg": "8.23.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "resend": "^6.24.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/pg": "8.23.1",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.3",
+    "prisma": "7.10.0",
+    "tailwindcss": "^4",
+    "tsx": "^4.23.12",
+    "typescript": "^5"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  }
+}

@@ -1,0 +1,125 @@
+{
+  "note": "Fixtures for the job classifier, written against the demo org's catalog (AC repair, AC installation, Routine maintenance, Gas refilling, Duct cleaning). Inputs are deliberately messy — short, mixed English/Urdu, sometimes vague — because that is what a dispatcher actually receives. `priority` is scored with one-step tolerance since it is a judgement call; `service` is scored strictly.",
+  "cases": [
+    {
+      "id": "cooling-fail-basic",
+      "input": "AC chal raha hai lekin room thanda nahi ho raha",
+      "service": "AC repair",
+      "priority": "MEDIUM"
+    },
+    {
+      "id": "no-cooling-heatwave-infant",
+      "input": "No cooling at all since last night, we have a 2 month old baby and it is 44 degrees today. Please send someone urgently.",
+      "service": "AC repair",
+      "priority": "URGENT"
+    },
+    {
+      "id": "water-leak-ceiling",
+      "input": "Indoor unit se paani tapak raha hai, ceiling kharab ho rahi hai",
+      "service": "AC repair",
+      "priority": "HIGH"
+    },
+    {
+      "id": "new-install-quote",
+      "input": "We are shifting to a new flat, need two 1.5 ton units installed next week",
+      "service": "AC installation",
+      "priority": "LOW"
+    },
+    {
+      "id": "install-meeting-room",
+      "input": "Office ke meeting room mein ek aur AC lagwana hai",
+      "service": "AC installation",
+      "priority": "MEDIUM"
+    },
+    {
+      "id": "annual-service",
+      "input": "Annual servicing karwani hai, dono units ki",
+      "service": "Routine maintenance",
+      "priority": "LOW"
+    },
+    {
+      "id": "pre-summer-check",
+      "input": "Summer se pehle check karwa lein, abhi koi problem nahi hai",
+      "service": "Routine maintenance",
+      "priority": "LOW"
+    },
+    {
+      "id": "gas-low",
+      "input": "Cooling weak ho gayi hai, lagta hai gas kam ho gayi",
+      "service": "Gas refilling",
+      "priority": "MEDIUM"
+    },
+    {
+      "id": "gas-leak-suspected",
+      "input": "Technician ne pichli baar bola tha gas leak hai, ab bilkul cooling nahi",
+      "service": "Gas refilling",
+      "priority": "HIGH"
+    },
+    {
+      "id": "duct-dusty",
+      "input": "Shop ke ducts mein bohot dust hai, customers complain kar rahe hain",
+      "service": "Duct cleaning",
+      "priority": "MEDIUM"
+    },
+    {
+      "id": "duct-full-apartment",
+      "input": "Whole apartment duct cleaning chahiye",
+      "service": "Duct cleaning",
+      "priority": "LOW"
+    },
+    {
+      "id": "noise-outdoor",
+      "input": "Outdoor unit se ajeeb awaaz aa rahi hai, bohot loud",
+      "service": "AC repair",
+      "priority": "MEDIUM"
+    },
+    {
+      "id": "breaker-trip",
+      "input": "Jab AC on karte hain to breaker trip ho jata hai. Thoda darr lag raha hai.",
+      "service": "AC repair",
+      "priority": "HIGH"
+    },
+    {
+      "id": "remote-dead",
+      "input": "Remote kaam nahi kar raha, AC theek hai",
+      "service": "AC repair",
+      "priority": "LOW"
+    },
+    {
+      "id": "very-terse",
+      "input": "AC kharab",
+      "service": "AC repair",
+      "priority": "MEDIUM"
+    },
+    {
+      "id": "compressor-cutting-out",
+      "input": "Compressor thodi der chalta hai phir band ho jata hai, phir chal padta hai",
+      "service": "AC repair",
+      "priority": "MEDIUM"
+    },
+    {
+      "id": "smell-burning",
+      "input": "AC se jalne ki smell aa rahi hai, humne turant band kar diya",
+      "service": "AC repair",
+      "priority": "URGENT"
+    },
+    {
+      "id": "restaurant-down-business",
+      "input": "Restaurant ka AC band hai, customers ja rahe hain. Aaj hi chahiye.",
+      "service": "AC repair",
+      "priority": "HIGH"
+    },
+    {
+      "id": "out-of-catalog-fridge",
+      "input": "Mera fridge thanda nahi kar raha, aap log dekh lenge?",
+      "service": "__none__",
+      "priority": "MEDIUM"
+    },
+    {
+      "id": "out-of-catalog-washing-machine",
+      "input": "Washing machine se paani leak ho raha hai",
+      "service": "__none__",
+      "priority": "MEDIUM"
+    }
+  ]
+}

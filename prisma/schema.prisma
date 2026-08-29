@@ -1,0 +1,598 @@
+// ServiceOps — Module 1 data model
+// Multi-tenant: every tenant-owned row carries organizationId and is reached
+// only through the scoped data-access layer (see docs/03-data-model.md).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Prisma 7: connection URLs live in prisma.config.ts (migrations) and
+  // the PrismaClient driver adapter in lib/db/prisma.ts (runtime).
+}
+
+// ─────────────────────────────────────────────────────────────
+// Auth.js (v5) — identity only. Tenancy lives in Membership.
+// ─────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  passwordHash  String?
+  image         String?
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts    Account[]
+  sessions    Session[]
+  memberships Membership[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  email     String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Tenancy
+// ─────────────────────────────────────────────────────────────
+
+model Organization {
+  id      String  @id @default(cuid())
+  name    String
+  slug    String  @unique
+  logoUrl String?
+
+  email       String?
+  phone       String?
+  addressLine String?
+  city        String?
+  country     String?
+
+  timezone String @default("Asia/Karachi")
+  currency String @default("PKR") // ISO 4217
+
+  // Per-org counters. Increment atomically inside a transaction.
+  nextJobNumber     Int     @default(1)
+  nextInvoiceNumber Int     @default(1)
+  invoicePrefix     String  @default("INV")
+  invoiceDueDays    Int     @default(7)
+  invoiceFooter     String?
+  defaultTaxRateBps Int     @default(0) // basis points: 1700 = 17%
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // ── AI (Module 2) ──
+  aiEnabled               Boolean @default(true)
+  /// Micro-dollars (1e-6 USD). A classification costs ~5,000 of these, so
+  /// cents would round to zero. Default cap is $20/month.
+  aiMonthlySpendCapMicros Int     @default(20000000)
+
+  memberships             Membership[]
+  serviceTypes            ServiceType[]
+  customers               Customer[]
+  jobs                    Job[]
+  invoices                Invoice[]
+  notifications           Notification[]
+  notificationPreferences NotificationPreference[]
+  aiSuggestions           AiSuggestion[]
+  aiUsage                 AiUsageLog[]
+  aiFeatureSettings       AiFeatureSetting[]
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MANAGER
+  TECHNICIAN
+}
+
+enum MembershipStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+}
+
+/// The join between a person and an org. This — not User — is what jobs are
+/// assigned to, so removing someone from an org never orphans job history.
+model Membership {
+  id             String  @id @default(cuid())
+  organizationId String
+  userId         String? // null until a pending invite is accepted
+
+  role   Role             @default(TECHNICIAN)
+  status MembershipStatus @default(INVITED)
+
+  inviteEmail     String?
+  inviteToken     String?   @unique
+  inviteExpiresAt DateTime?
+  invitedById     String?
+
+  joinedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  technician   TechnicianProfile?
+
+  assignedJobs  Job[]              @relation("JobAssignee")
+  createdJobs   Job[]              @relation("JobCreator")
+  statusChanges JobStatusHistory[]
+  jobNotes      JobNote[]
+
+  // Postgres treats NULLs as distinct, so multiple pending invites coexist
+  // while an accepted user can only join a given org once.
+  @@unique([organizationId, userId])
+  @@index([organizationId, role, status])
+}
+
+/// Extra fields that only matter for members who do field work.
+model TechnicianProfile {
+  id           String @id @default(cuid())
+  membershipId String @unique
+
+  phone         String?
+  skills        String[] // matched against ServiceType.name; feeds Module 2 routing
+  calendarColor String   @default("#2563eb")
+  maxJobsPerDay Int      @default(6)
+  isAvailable   Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  membership Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────────────────────
+// Catalog & customers
+// ─────────────────────────────────────────────────────────────
+
+/// Per-org, not a global enum — an AC company and a pest-control company
+/// share nothing here.
+model ServiceType {
+  id             String @id @default(cuid())
+  organizationId String
+
+  name                   String
+  defaultDurationMinutes Int     @default(60)
+  defaultPriceCents      Int     @default(0)
+  isActive               Boolean @default(true)
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  jobs         Job[]
+
+  @@unique([organizationId, name])
+}
+
+model Customer {
+  id             String @id @default(cuid())
+  organizationId String
+
+  name        String
+  email       String?
+  phone       String?
+  addressLine String?
+  city        String?
+  notes       String?
+
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  jobs         Job[]
+  invoices     Invoice[]
+
+  @@index([organizationId, name])
+  @@index([organizationId, phone])
+  @@index([organizationId, archivedAt])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Jobs — the core of the product
+// ─────────────────────────────────────────────────────────────
+
+enum JobStatus {
+  NEW
+  SCHEDULED
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum JobPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Job {
+  id             String @id @default(cuid())
+  organizationId String
+  number         Int // per-org sequence, shown as "JOB #1048"
+
+  customerId    String
+  serviceTypeId String?
+
+  title       String
+  description String?
+  priority    JobPriority @default(MEDIUM)
+  status      JobStatus   @default(NEW)
+
+  scheduledStart DateTime?
+  scheduledEnd   DateTime?
+
+  assignedMembershipId String?
+
+  // Snapshotted from the customer at creation, overridable per job.
+  addressLine String?
+  city        String?
+
+  startedAt    DateTime?
+  completedAt  DateTime?
+  cancelledAt  DateTime?
+  cancelReason String?
+
+  /// A customer-facing account of what was done, written from the technician's
+  /// notes and confirmed by a human. Shown on the job and on the invoice.
+  customerSummary String?
+
+  createdByMembershipId String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  serviceType  ServiceType? @relation(fields: [serviceTypeId], references: [id], onDelete: SetNull)
+  assignedTo   Membership?  @relation("JobAssignee", fields: [assignedMembershipId], references: [id], onDelete: SetNull)
+  createdBy    Membership?  @relation("JobCreator", fields: [createdByMembershipId], references: [id], onDelete: SetNull)
+
+  statusHistory JobStatusHistory[]
+  notes         JobNote[]
+  invoice       Invoice?
+  notifications Notification[]
+  aiSuggestions AiSuggestion[]
+
+  @@unique([organizationId, number])
+  @@index([organizationId, status, scheduledStart])
+  @@index([organizationId, assignedMembershipId, scheduledStart])
+  @@index([organizationId, customerId])
+}
+
+/// Append-only. Every status change writes one row, in the same transaction.
+model JobStatusHistory {
+  id    String     @id @default(cuid())
+  jobId String
+  from  JobStatus?
+  to    JobStatus
+  note  String?
+
+  changedByMembershipId String?
+  createdAt             DateTime @default(now())
+
+  job       Job         @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  changedBy Membership? @relation(fields: [changedByMembershipId], references: [id], onDelete: SetNull)
+
+  @@index([jobId, createdAt])
+}
+
+model JobNote {
+  id    String @id @default(cuid())
+  jobId String
+  body  String
+
+  authorMembershipId String?
+  createdAt          DateTime @default(now())
+
+  job    Job         @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  author Membership? @relation(fields: [authorMembershipId], references: [id], onDelete: SetNull)
+
+  @@index([jobId, createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Invoices — all money is integer minor units. Never a float.
+// ─────────────────────────────────────────────────────────────
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum InvoiceItemKind {
+  LABOUR
+  PARTS
+  FEE
+  DISCOUNT
+  OTHER
+}
+
+model Invoice {
+  id             String @id @default(cuid())
+  organizationId String
+  sequence       Int
+  number         String // rendered: "INV-0042"
+
+  customerId String
+  jobId      String @unique // Module 1 decision: exactly one invoice per job
+
+  status   InvoiceStatus @default(DRAFT)
+  currency String
+
+  subtotalCents   Int @default(0)
+  taxRateBps      Int @default(0)
+  taxCents        Int @default(0)
+  totalCents      Int @default(0)
+  amountPaidCents Int @default(0)
+
+  issuedAt DateTime?
+  dueAt    DateTime?
+  sentAt   DateTime?
+  paidAt   DateTime?
+
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer      Customer       @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  job           Job            @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  items         InvoiceItem[]
+  notifications Notification[]
+  aiSuggestions AiSuggestion[]
+
+  @@unique([organizationId, sequence])
+  @@index([organizationId, status, dueAt])
+  @@index([organizationId, customerId])
+}
+
+model InvoiceItem {
+  id        String @id @default(cuid())
+  invoiceId String
+
+  description    String
+  kind           InvoiceItemKind @default(LABOUR)
+  quantity       Int             @default(1)
+  unitPriceCents Int             @default(0)
+  amountCents    Int             @default(0) // quantity * unitPriceCents, stored
+  position       Int             @default(0)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId, position])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Notifications — transactional outbox.
+// Domain code writes a row; a dispatcher sends it. Nothing calls the email
+// provider inline, so a provider outage can never fail a job update.
+// ─────────────────────────────────────────────────────────────
+
+enum NotificationType {
+  JOB_CREATED
+  JOB_ASSIGNED
+  APPOINTMENT_SCHEDULED
+  APPOINTMENT_RESCHEDULED
+  APPOINTMENT_REMINDER
+  JOB_COMPLETED
+  INVOICE_SENT
+  INVOICE_OVERDUE
+  // Always sent; the recipient is the invitee, so preferences do not apply.
+  TEAM_INVITE
+}
+
+enum NotificationChannel {
+  EMAIL // SMS / WHATSAPP / PUSH slot in here without touching callers
+}
+
+enum RecipientKind {
+  CUSTOMER
+  TECHNICIAN
+  ORG
+}
+
+enum NotificationStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+model Notification {
+  id             String @id @default(cuid())
+  organizationId String
+
+  type          NotificationType
+  channel       NotificationChannel @default(EMAIL)
+  recipientKind RecipientKind
+
+  toEmail String
+  toName  String?
+  subject String
+  payload Json // template variables, snapshotted at enqueue time
+
+  status       NotificationStatus @default(PENDING)
+  scheduledFor DateTime           @default(now())
+  attempts     Int                @default(0)
+  lastError    String?
+
+  providerMessageId String?
+  sentAt            DateTime?
+
+  jobId     String?
+  invoiceId String?
+
+  /// e.g. "reminder:<jobId>:2026-08-30" — makes the dispatcher idempotent.
+  dedupeKey String? @unique
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          Job?         @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  invoice      Invoice?     @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([status, scheduledFor])
+  @@index([organizationId, createdAt])
+}
+
+model NotificationPreference {
+  id             String           @id @default(cuid())
+  organizationId String
+  type           NotificationType
+
+  enabled          Boolean @default(true)
+  notifyCustomer   Boolean @default(true)
+  notifyTechnician Boolean @default(true)
+  notifyOrg        Boolean @default(false)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, type])
+}
+
+// ─────────────────────────────────────────────────────────────
+// AI (Module 2) — Claude proposes, a human decides.
+// Nothing in here is ever applied to a job or invoice by the model.
+// See docs/05-module-2-scope.md.
+// ─────────────────────────────────────────────────────────────
+
+enum AiFeature {
+  JOB_CLASSIFICATION
+  JOB_SUMMARY
+  TECHNICIAN_RECOMMENDATION
+  INVOICE_DRAFT
+  BUSINESS_INSIGHT
+}
+
+enum AiSuggestionStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  /// Replaced by a newer suggestion for the same target and feature.
+  SUPERSEDED
+}
+
+/// One proposal from the model, awaiting a human decision. The unit of trust
+/// in this module: features read accepted suggestions, never raw model output.
+model AiSuggestion {
+  id             String             @id @default(cuid())
+  organizationId String
+  feature        AiFeature
+  status         AiSuggestionStatus @default(PENDING)
+
+  /// What it is about. Exactly one is set.
+  jobId     String?
+  invoiceId String?
+
+  /// The proposal, shaped per feature and validated before it is stored.
+  payload Json
+  /// One line of reasoning, shown to whoever decides.
+  rationale String?
+  model     String
+
+  requestedByMembershipId String?
+  decidedByMembershipId   String?
+  decidedAt               DateTime?
+  createdAt               DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          Job?         @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  invoice      Invoice?     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, feature, status])
+  @@index([jobId, feature])
+  @@index([organizationId, createdAt])
+}
+
+/// Every call to the model, successful or not. Feeds the spend cap and the
+/// usage figures in settings.
+model AiUsageLog {
+  id             String    @id @default(cuid())
+  organizationId String
+  feature        AiFeature
+  model          String
+
+  inputTokens      Int @default(0)
+  outputTokens     Int @default(0)
+  cacheReadTokens  Int @default(0)
+  cacheWriteTokens Int @default(0)
+  /// Micro-dollars, computed from the tokens above at the model's rates.
+  costMicros       Int @default(0)
+
+  latencyMs Int     @default(0)
+  ok        Boolean @default(true)
+  error     String?
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, feature, createdAt])
+}
+
+model AiFeatureSetting {
+  id             String    @id @default(cuid())
+  organizationId String
+  feature        AiFeature
+  enabled        Boolean   @default(true)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, feature])
+}
