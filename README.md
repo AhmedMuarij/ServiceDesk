@@ -100,6 +100,22 @@ sends it, so an email provider outage can never fail a job update.
 
 ---
 
+## Deploying
+
+Import the repo on Vercel and set the environment variables from
+[.env.example](.env.example) — with one exception: **do not set `AUTH_URL`**.
+Auth.js derives its base URL from the request host, and emailed links use
+Vercel's own `VERCEL_PROJECT_PRODUCTION_URL`, so production and preview
+deployments both resolve correctly with nothing to maintain. Setting it to
+`http://localhost:3000` sends every sign-in redirect and every emailed link to
+localhost.
+
+Vercel's Hobby plan caps cron jobs at one run per day. The nightly reminder fits
+and stays in [vercel.json](vercel.json); the notification dispatcher runs every
+five minutes from
+[.github/workflows/dispatch-notifications.yml](.github/workflows/dispatch-notifications.yml)
+instead, which needs two repository secrets — `APP_URL` and `CRON_SECRET`.
+
 ## Signing in to the demo
 
 After `npm run db:seed`:
