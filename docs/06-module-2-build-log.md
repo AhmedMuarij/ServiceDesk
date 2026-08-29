@@ -214,6 +214,21 @@ now excludes attempts the provider already refused.
 
 ---
 
+## Deploying the crons on a free plan
+
+Vercel Hobby caps cron jobs at once per day. The nightly reminder fits that
+exactly and stays in `vercel.json`. The notification dispatcher does not — an
+email that waits up to 24 hours to leave is not a notification — so it runs
+from GitHub Actions every five minutes instead, in
+`.github/workflows/dispatch-notifications.yml`.
+
+That split costs nothing and needs no code change, because the dispatcher was
+already an authenticated HTTP endpoint rather than an in-process timer. It also
+survives GitHub delaying a scheduled run: the dispatcher claims rows with
+`FOR UPDATE SKIP LOCKED`, so a late or overlapping invocation is harmless.
+
+Two repository secrets are required — `APP_URL` and `CRON_SECRET`.
+
 ## Cost
 
 Zero, on the free tier. Tokens and latency are still logged per feature and
